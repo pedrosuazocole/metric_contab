@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Metric Contab v3.0</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    #login-screen{display:none;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#064e3b 0%,#059669 100%);padding:20px}
+    .login-card{background:#fff;border-radius:16px;padding:40px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
+    .login-title{font-size:22px;font-weight:700;color:#064e3b;text-align:center;margin-bottom:4px}
+    .login-sub{font-size:13px;color:#94a3b8;text-align:center;margin-bottom:28px}
+    .login-field{margin-bottom:16px}
+    .login-field label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px}
+    .login-field input{width:100%;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none;transition:border-color .15s;font-family:inherit;box-sizing:border-box}
+    .login-field input:focus{border-color:#059669}
+    .login-btn{width:100%;padding:12px;background:#059669;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:8px}
+    .login-btn:hover{background:#047857}
+    .login-error{color:#dc2626;font-size:12px;text-align:center;margin-top:8px;min-height:18px}
+    #topbar{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:52px;background:#fff;border-bottom:1px solid #e2e8f0;flex-shrink:0;gap:12px}
+    .topbar-role{font-size:11px;background:#f0fdf4;color:#15803d;padding:2px 8px;border-radius:10px;font-weight:600;text-transform:capitalize}
+    .btn-logout{font-size:12px;color:#94a3b8;background:none;border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-family:inherit}
+    .btn-logout:hover{color:#dc2626;border-color:#dc2626}
+    #sidebar{background:#064e3b !important;}
+    .nav-item.active{background:#059669 !important;}
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:36px">📊</div>
+      <div style="font-size:28px;font-weight:800;color:#064e3b;letter-spacing:1px">METRIC CONTAB</div>
+    </div>
+    <div class="login-title">Iniciar Sesión</div>
+    <div class="login-sub">Software Contable Multiempresa v3.0</div>
+    <div class="login-field">
+      <label>Usuario</label>
+      <input type="text" id="login-user" placeholder="admin" autocomplete="username">
+    </div>
+    <div class="login-field">
+      <label>Contraseña</label>
+      <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <div class="login-error" id="login-error"></div>
+    <button class="login-btn" id="login-btn">Ingresar al Sistema</button>
+  </div>
+</div>
+
+<!-- SELECTOR DE EMPRESA -->
+<div id="empresa-modal" class="modal-overlay">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title">Seleccionar Empresa</div>
+    <div style="padding:16px 20px 20px">
+      <div style="font-size:13px;color:#64748b;margin-bottom:14px">Selecciona la empresa con la que deseas trabajar en esta sesión.</div>
+      <div id="empresa-lista" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" style="display:none;flex-direction:column;height:100vh">
+
+  <!-- TOPBAR -->
+  <div id="topbar">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:18px;font-weight:800;color:#064e3b;letter-spacing:.5px">📊 METRIC CONTAB</span>
+      <div id="empresa-topbar" class="empresa-badge" onclick="abrirSelectorEmpresa()" title="Cambiar empresa" style="display:none">
+        <span style="font-size:11px">🏢</span>
+        <div>
+          <div class="empresa-nombre" id="top-empresa-nombre">—</div>
+          <div class="empresa-rtn" id="top-empresa-rtn"></div>
+        </div>
+        <span style="font-size:10px;color:#64748b">▾</span>
+      </div>
+      <div id="periodo-topbar" style="display:none">
+        <div class="periodo-badge" id="top-periodo-badge">—</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="topbar-role" id="top-role">—</span>
+      <span style="font-size:13px;font-weight:600;color:#1e293b" id="top-user">—</span>
+      <button class="btn-logout" onclick="doLogout()">Cerrar sesión</button>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div style="display:flex;flex:1;overflow:hidden">
+    <aside id="sidebar">
+      <div id="sidebar-logo" style="padding:16px 12px 8px;text-align:center">
+        <div style="font-size:22px">📊</div>
+        <div style="font-size:10px;font-weight:700;color:#6ee7b7;margin-top:2px;letter-spacing:.5px">CONTAB v3.0</div>
+      </div>
+      <nav id="nav-menu"></nav>
+    </aside>
+    <div id="main" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+
+      <!-- ── VISTA: DASHBOARD ──────────────────────────────────────────── -->
+      <div id="dashboard-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Dashboard Contable</div><div class="page-subtitle" id="dash-empresa-sub">Selecciona una empresa para comenzar</div></div>
+            <div id="dash-periodo-sel" style="display:none;display:flex;align-items:center;gap:8px">
+              <label style="font-size:12px;color:#64748b">Período:</label>
+              <select id="dash-periodo" onchange="renderDashboard()" style="border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;font-size:13px;outline:none"></select>
+            </div>
+          </div>
+          <div id="dash-kpis" class="kpi-grid"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="dash-graficos">
+            <div class="reporte-contable" id="dash-pyg" style="padding:16px">
+              <div style="font-size:13px;font-weight:700;color:#1e3a5f;margin-bottom:12px">Estado de Resultados</div>
+              <div id="dash-pyg-body" style="color:#94a3b8;font-size:13px">Selecciona un período</div>
+            </div>
+            <div class="reporte-contable" id="dash-ultimos" style="padding:16px">
+              <div style="font-size:13px;font-weight:700;color:#1e3a5f;margin-bottom:12px">Últimos Asientos</div>
+              <div id="dash-ultimos-body" style="color:#94a3b8;font-size:13px">Sin asientos registrados</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: PLAN DE CUENTAS ────────────────────────────────────── -->
+      <div id="cuentas-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Plan de Cuentas</div><div class="page-subtitle">Catálogo CCPH Honduras — estructura jerárquica</div></div>
+            <div style="display:flex;gap:8px">
+              <div class="search-box">
+                <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input type="text" id="cuentas-search" placeholder="Buscar cuenta..." oninput="renderCuentas()">
+              </div>
+              <select id="cuentas-tipo-filter" onchange="renderCuentas()" style="border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;outline:none">
+                <option value="">Todos los tipos</option>
+                <option value="activo">Activo</option>
+                <option value="pasivo">Pasivo</option>
+                <option value="capital">Capital</option>
+                <option value="ingreso">Ingreso</option>
+                <option value="costo">Costo</option>
+                <option value="gasto">Gasto</option>
+              </select>
+              <button class="btn-secondary" onclick="descargarPlantillaCuentas()" style="font-size:12px" title="Descargar plantilla CSV">📄 Plantilla</button>
+              <button class="btn-secondary" onclick="exportarPlanCuentas()" style="font-size:12px" title="Exportar CSV">📥 Exportar</button>
+              <label class="btn-secondary" style="font-size:12px;cursor:pointer;margin:0;padding:6px 12px;display:inline-flex;align-items:center;gap:4px">
+                📤 Importar
+                <input type="file" accept=".csv" id="import-cuentas-file" onchange="importarPlanCuentas(this)" style="display:none">
+              </label>
+              <button class="btn-primary" onclick="openModal('cuenta-modal')">+ Nueva Cuenta</button>
+            </div>
+          </div>
+          <div class="data-table"><div id="cuentas-body" style="padding:8px"></div></div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: DIARIO GENERAL ─────────────────────────────────────── -->
+      <div id="diario-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Diario General</div><div class="page-subtitle" id="diario-subtitle">Registro de asientos contables</div></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select id="diario-periodo" onchange="renderDiario()" style="border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;font-size:12px;outline:none"></select>
+              <select id="diario-estado" onchange="renderDiario()" style="border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;font-size:12px;outline:none">
+                <option value="">Todos</option>
+                <option value="borrador">Borrador</option>
+                <option value="contabilizado">Contabilizado</option>
+                <option value="anulado">Anulado</option>
+              </select>
+              <button class="btn-primary" onclick="openModal('asiento-modal');initAsientoModal()">+ Nuevo Asiento</button>
+            </div>
+          </div>
+          <div class="data-table">
+            <table><thead><tr>
+              <th>N°</th><th>Fecha</th><th>Concepto</th><th>Referencia</th>
+              <th>Tipo</th><th>Total Debe</th><th>Estado</th><th>Acciones</th>
+            </tr></thead>
+            <tbody id="diario-body"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: MAYOR GENERAL ──────────────────────────────────────── -->
+      <div id="mayor-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Mayor General</div><div class="page-subtitle">Movimientos y saldo por cuenta</div></div>
+          </div>
+          <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;flex:1;min-height:0;overflow:hidden">
+            <!-- Selector de cuenta -->
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+              <div style="padding:12px;border-bottom:1px solid #e2e8f0;background:#f8fafc">
+                <input type="text" id="mayor-cuenta-search" placeholder="Buscar cuenta..." oninput="renderMayorCuentas()"
+                  style="width:100%;border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;font-family:inherit">
+              </div>
+              <div id="mayor-cuentas-lista" style="overflow-y:auto;flex:1;padding:6px"></div>
+            </div>
+            <!-- Movimientos del mayor -->
+            <div style="display:flex;flex-direction:column;gap:12px;overflow:hidden">
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="mayor-filtros" style="display:none">
+                <select id="mayor-periodo" onchange="renderMayor()" style="border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;font-size:12px;outline:none"></select>
+                <button class="btn-primary" style="background:#dc2626;font-size:12px;padding:6px 14px" onclick="exportarMayorExcel()">📊 Excel</button>
+                <button class="btn-primary" style="background:#475569;font-size:12px;padding:6px 14px" onclick="imprimirMayor()">🖨️ Imprimir</button>
+              </div>
+              <div class="data-table" style="flex:1;overflow:auto">
+                <div id="mayor-body" style="padding:20px;color:#94a3b8;text-align:center">
+                  Selecciona una cuenta del panel izquierdo
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: BALANCE DE COMPROBACIÓN ────────────────────────────── -->
+      <div id="balcomp-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Balance de Comprobación</div><div class="page-subtitle">Verificación de partida doble por cuenta</div></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select id="balcomp-periodo" onchange="renderBalComp()" style="border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;font-size:12px;outline:none"></select>
+              <button class="btn-primary" style="background:#dc2626;font-size:12px;padding:6px 14px" onclick="exportarBalCompExcel()">📊 Excel</button>
+              <button class="btn-primary" style="background:#475569;font-size:12px;padding:6px 14px" onclick="imprimirBalComp()">🖨️ Imprimir</button>
+            </div>
+          </div>
+          <div class="data-table">
+            <table><thead><tr>
+              <th>Código</th><th>Cuenta</th><th>Tipo</th>
+              <th style="text-align:right">Total Debe</th><th style="text-align:right">Total Haber</th>
+              <th style="text-align:right">Saldo Deudor</th><th style="text-align:right">Saldo Acreedor</th>
+            </tr></thead>
+            <tbody id="balcomp-body"></tbody>
+            <tfoot id="balcomp-foot"></tfoot></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: ESTADO DE RESULTADOS ──────────────────────────────── -->
+      <div id="resultados-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Estado de Resultados</div><div class="page-subtitle">Ingresos, costos, gastos y utilidad del período</div></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select id="result-periodo" onchange="renderEstadoResultados()" style="border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;font-size:12px;outline:none"></select>
+              <button class="btn-primary" style="background:#dc2626;font-size:12px;padding:6px 14px" onclick="exportarResultadosExcel()">📊 Excel</button>
+              <button class="btn-primary" style="background:#475569;font-size:12px;padding:6px 14px" onclick="imprimirResultados()">🖨️ Imprimir</button>
+            </div>
+          </div>
+          <div id="resultados-body"></div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: BALANCE GENERAL ────────────────────────────────────── -->
+      <div id="balgen-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Balance General</div><div class="page-subtitle">Activo = Pasivo + Capital</div></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select id="balgen-periodo" onchange="renderBalanceGeneral()" style="border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;font-size:12px;outline:none"></select>
+              <button class="btn-primary" style="background:#dc2626;font-size:12px;padding:6px 14px" onclick="exportarBalGenExcel()">📊 Excel</button>
+              <button class="btn-primary" style="background:#475569;font-size:12px;padding:6px 14px" onclick="imprimirBalGen()">🖨️ Imprimir</button>
+            </div>
+          </div>
+          <div id="balgen-body"></div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: PERÍODOS ────────────────────────────────────────────── -->
+      <div id="periodos-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Períodos Contables</div><div class="page-subtitle">Gestión de meses y años contables</div></div>
+            <button class="btn-primary" onclick="openModal('periodo-modal')">+ Abrir Período</button>
+          </div>
+          <div class="data-table">
+            <table><thead><tr><th>Período</th><th>Año</th><th>Mes</th><th>Estado</th><th>Fecha Cierre</th><th>Acciones</th></tr></thead>
+            <tbody id="periodos-body"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: EMPRESAS ────────────────────────────────────────────── -->
+      <div id="empresas-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Empresas</div><div class="page-subtitle">Gestión multiempresa</div></div>
+            <button class="btn-primary" onclick="openModal('empresa-form-modal')">+ Nueva Empresa</button>
+          </div>
+          <div class="data-table">
+            <table><thead><tr><th>Empresa</th><th>RTN</th><th>Dirección</th><th>Régimen</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <tbody id="empresas-body"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: USUARIOS ────────────────────────────────────────────── -->
+      <div id="usuarios-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Usuarios del Sistema</div><div class="page-subtitle">Acceso global — multiempresa</div></div>
+            <button class="btn-primary" onclick="openModal('usuario-modal')">+ Nuevo Usuario</button>
+          </div>
+          <div class="data-table">
+            <table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <tbody id="usuarios-body"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: CENTROS DE COSTO ────────────────────────────────────── -->
+      <div id="centros-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Centros de Costo</div><div class="page-subtitle">Departamentos y proyectos</div></div>
+            <button class="btn-primary" onclick="openModal('centro-modal')">+ Nuevo Centro</button>
+          </div>
+          <div class="data-table">
+            <table><thead><tr><th>Código</th><th>Nombre</th><th>Estado</th></tr></thead>
+            <tbody id="centros-body"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: ACTIVOS FIJOS ─────────────────────────────────────────── -->
+      <div id="activos-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Activos Fijos</div><div class="page-subtitle">Control de activos y depreciación</div></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn-primary" style="background:#7c3aed" onclick="openDepreciarModal()">⚙️ Depreciar Período</button>
+              <button class="btn-primary" onclick="openModal('activo-modal');initActivoModal()">+ Nuevo Activo</button>
+            </div>
+          </div>
+          <div id="activos-kpis" class="kpi-grid"></div>
+          <div class="data-table">
+            <table><thead><tr>
+              <th>Código</th><th>Nombre</th><th>Categoría</th><th>Método</th>
+              <th style="text-align:right">Valor Compra</th><th style="text-align:right">Dep. Acumulada</th>
+              <th style="text-align:right">Valor Neto</th><th>Estado</th><th>Acciones</th>
+            </tr></thead>
+            <tbody id="activos-body"></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: CIERRE CONTABLE ──────────────────────────────────────── -->
+      <div id="cierre-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Cierre Contable</div><div class="page-subtitle">Cierre mensual y anual — asiento automático</div></div>
+          </div>
+          <!-- Panel de ejecución de cierre -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+            <div class="config-section">
+              <div class="config-section-title">🔒 Ejecutar Cierre de Período</div>
+              <div class="form-field" style="margin-bottom:12px">
+                <label>Período a cerrar</label>
+                <select id="cierre-periodo-sel" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%"></select>
+              </div>
+              <div class="form-field" style="margin-bottom:16px">
+                <label>Tipo de cierre</label>
+                <select id="cierre-tipo" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%">
+                  <option value="mensual">Mensual</option>
+                  <option value="anual">Anual</option>
+                </select>
+              </div>
+              <div id="cierre-preview" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:14px;display:none">
+                <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Vista previa</div>
+                <div id="cierre-preview-body"></div>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn-cancel" onclick="previewCierre()" style="flex:1">👁️ Vista Previa</button>
+                <button class="btn-primary" style="flex:1;background:#dc2626" onclick="ejecutarCierre()">🔒 Ejecutar Cierre</button>
+              </div>
+            </div>
+            <div class="config-section">
+              <div class="config-section-title">📋 Historial de Cierres</div>
+              <div id="cierres-lista" style="display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: REPORTES SAR ─────────────────────────────────────────── -->
+      <div id="sar-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Reportes SAR Honduras</div><div class="page-subtitle">Libro ISV · PyG Fiscal · Activos Fijos</div></div>
+            <button class="btn-primary" style="background:#475569" onclick="navigateTo('config-sar')">⚙️ Config SAR</button>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+            <select id="sar-periodo" style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-size:12px;outline:none"></select>
+            <select id="sar-anio" style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-size:12px;outline:none"></select>
+          </div>
+          <div class="report-cards">
+            <div class="report-card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+                <div style="width:40px;height:40px;background:#fef3c7;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px">📒</div>
+                <div><div style="font-weight:700;color:#1e293b">Libro de Ventas ISV</div><div style="font-size:11px;color:#94a3b8">Movimientos ISV 15% e ISV 18%</div></div>
+              </div>
+              <div style="font-size:12px;color:#64748b;margin-bottom:14px">Detalle de movimientos en cuentas ISV para declaración mensual.</div>
+              <div style="display:flex;gap:6px">
+                <button class="btn-primary" style="flex:1;justify-content:center" onclick="reporteLibroVentas()">🖨️ Imprimir</button>
+                <button class="btn-primary" style="flex:1;justify-content:center;background:#15803d" onclick="reporteLibroVentasExcel()">📊 Excel</button>
+              </div>
+            </div>
+            <div class="report-card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+                <div style="width:40px;height:40px;background:#eff6ff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px">📊</div>
+                <div><div style="font-weight:700;color:#1e293b">PyG por Mes (SAR)</div><div style="font-size:11px;color:#94a3b8">Ingresos y gastos por período fiscal</div></div>
+              </div>
+              <div style="font-size:12px;color:#64748b;margin-bottom:14px">Resumen mensual de ingresos, costos, gastos y utilidad para ISR.</div>
+              <div style="display:flex;gap:6px">
+                <button class="btn-primary" style="flex:1;justify-content:center" onclick="reporteSarPyG()">🖨️ Imprimir</button>
+                <button class="btn-primary" style="flex:1;justify-content:center;background:#15803d" onclick="reporteSarPyGExcel()">📊 Excel</button>
+              </div>
+            </div>
+            <div class="report-card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+                <div style="width:40px;height:40px;background:#f0fdf4;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px">🏭</div>
+                <div><div style="font-weight:700;color:#1e293b">Activos Fijos SAR</div><div style="font-size:11px;color:#94a3b8">Control de activos y depreciaciones</div></div>
+              </div>
+              <div style="font-size:12px;color:#64748b;margin-bottom:14px">Listado de activos fijos por categoría con valores y depreciación acumulada.</div>
+              <div style="display:flex;gap:6px">
+                <button class="btn-primary" style="flex:1;justify-content:center" onclick="reporteActivosSAR()">🖨️ Imprimir</button>
+                <button class="btn-primary" style="flex:1;justify-content:center;background:#15803d" onclick="reporteActivosSARExcel()">📊 Excel</button>
+              </div>
+            </div>
+            <div class="report-card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+                <div style="width:40px;height:40px;background:#ecfdf5;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px">🛒</div>
+                <div><div style="font-weight:700;color:#1e293b">Libro de Compras ISV</div><div style="font-size:11px;color:#94a3b8">Compras gravadas, exentas y ISV pagado</div></div>
+              </div>
+              <div style="font-size:12px;color:#64748b;margin-bottom:14px">Detalle de facturas de compra con desglose de ISV 15% e ISV 18% para declaración SAR.</div>
+              <div style="display:flex;gap:6px">
+                <button class="btn-primary" style="flex:1;justify-content:center" onclick="reporteLibroCompras()">🖨️ Imprimir</button>
+                <button class="btn-primary" style="flex:1;justify-content:center;background:#15803d" onclick="reporteLibroComprasExcel()">📊 Excel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: CONFIG SAR ───────────────────────────────────────────── -->
+      <div id="config-sar-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div><div class="page-title">Configuración SAR</div><div class="page-subtitle">Parámetros fiscales por empresa</div></div>
+          </div>
+          <div class="config-section" style="max-width:500px">
+            <div class="config-section-title">Parámetros Fiscales Honduras</div>
+            <form id="config-sar-form" style="display:flex;flex-direction:column;gap:14px">
+              <div class="form-grid">
+                <div class="form-field span2"><label>Régimen Tributario</label>
+                  <select id="sar-regimen" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none">
+                    <option value="mercantil">Mercantil General</option>
+                    <option value="simplificado">Régimen Simplificado</option>
+                    <option value="exonerado">Exonerado</option>
+                  </select>
+                </div>
+                <div class="form-field"><label>Tasa ISV Ventas (%)</label><input type="number" id="sar-tasa-isv" step="0.01" min="0" max="100" placeholder="15"></div>
+                <div class="form-field"><label>Tasa ISR (%)</label><input type="number" id="sar-tasa-isr" step="0.01" min="0" max="100" placeholder="25"></div>
+                <div class="form-field" style="flex-direction:row;align-items:center;gap:10px;grid-column:span 2">
+                  <input type="checkbox" id="sar-declara-isv" style="width:16px;height:16px">
+                  <label for="sar-declara-isv" style="text-transform:none;font-size:13px;cursor:pointer">Empresa declara ISV mensualmente</label>
+                </div>
+                <div class="form-field" style="flex-direction:row;align-items:center;gap:10px;grid-column:span 2">
+                  <input type="checkbox" id="sar-declara-isr" style="width:16px;height:16px">
+                  <label for="sar-declara-isr" style="text-transform:none;font-size:13px;cursor:pointer">Empresa declara ISR anualmente</label>
+                </div>
+                <div class="form-field span2"><label>Mes inicio año fiscal</label>
+                  <select id="sar-inicio-fiscal" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none">
+                    <option value="1">Enero (año fiscal enero-diciembre)</option>
+                    <option value="10">Octubre (año fiscal octubre-septiembre)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="modal-actions"><button type="submit" class="btn-confirm">💾 Guardar Configuración SAR</button></div>
+              <div id="sar-config-ok" class="save-success" style="display:none">✅ Configuración guardada</div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VISTA: INTEGRACIÓN POS ──────────────────────────────────────── -->
+      <div id="pos-view" class="view">
+        <div class="page">
+          <div class="page-header">
+            <div>
+              <div class="page-title">Integración Metric POS</div>
+              <div class="page-subtitle">Motor de asientos automáticos desde Metric POS v7.3</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn-primary" style="background:#7c3aed" onclick="openModal('conexion-modal');initConexionModal()">+ Conectar POS</button>
+            </div>
+          </div>
+
+          <!-- KPIs de sincronización -->
+          <div id="pos-kpis" class="kpi-grid"></div>
+
+          <!-- Tabs: Conexiones | Reglas | Sync | Log -->
+          <div style="display:flex;gap:2px;border-bottom:2px solid #e2e8f0;margin-bottom:16px" id="pos-tabs">
+            <button class="pos-tab active" data-tab="conexiones" onclick="switchPosTab('conexiones')">🔌 Conexiones</button>
+            <button class="pos-tab" data-tab="reglas" onclick="switchPosTab('reglas')">⚙️ Reglas de Mapeo</button>
+            <button class="pos-tab" data-tab="sync" onclick="switchPosTab('sync')">🔄 Sincronizar</button>
+            <button class="pos-tab" data-tab="log" onclick="switchPosTab('log')">📋 Historial</button>
+          </div>
+
+          <!-- Tab: Conexiones -->
+          <div id="pos-tab-conexiones" class="pos-tab-content">
+            <div id="pos-conexiones-lista" style="display:flex;flex-direction:column;gap:10px"></div>
+          </div>
+
+          <!-- Tab: Reglas de Mapeo -->
+          <div id="pos-tab-reglas" class="pos-tab-content" style="display:none">
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#1d4ed8">
+              ℹ️ Cada evento del POS se mapea a un par de cuentas contables (Debe / Haber). Configura las cuentas según el plan contable de esta empresa.
+            </div>
+            <div id="pos-reglas-tabla"></div>
+          </div>
+
+          <!-- Tab: Sincronizar -->
+          <div id="pos-tab-sync" class="pos-tab-content" style="display:none">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div class="config-section">
+                <div class="config-section-title">🔄 Sincronización Manual</div>
+                <div class="form-field" style="margin-bottom:12px">
+                  <label>Conexión POS</label>
+                  <select id="sync-conexion" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%"></select>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+                  <div class="form-field">
+                    <label>Fecha desde</label>
+                    <input type="date" id="sync-fecha-ini" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%;box-sizing:border-box">
+                  </div>
+                  <div class="form-field">
+                    <label>Fecha hasta</label>
+                    <input type="date" id="sync-fecha-fin" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%;box-sizing:border-box">
+                  </div>
+                </div>
+                <button class="btn-primary" style="width:100%;justify-content:center;background:#059669" onclick="ejecutarSync()">
+                  🔄 Sincronizar Ahora
+                </button>
+                <div id="sync-resultado" style="margin-top:14px;display:none"></div>
+              </div>
+              <div class="config-section">
+                <div class="config-section-title">📡 Webhook (Tiempo Real)</div>
+                <div style="font-size:13px;color:#475569;margin-bottom:12px">
+                  Configura Metric POS para enviar transacciones automáticamente al guardar cada factura.
+                </div>
+                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px">
+                  <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px">URL del Webhook</div>
+                  <div id="webhook-url" style="font-family:monospace;font-size:12px;color:#2563eb;word-break:break-all"></div>
+                </div>
+                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:12px">
+                  <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px">Token de autenticación</div>
+                  <div id="webhook-token" style="font-family:monospace;font-size:12px;color:#475569">Selecciona una conexión</div>
+                </div>
+                <div style="font-size:11px;color:#94a3b8">El POS debe enviar POST con header <code>X-POS-Token</code> y body JSON con tipo_evento y datos.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: Historial / Log -->
+          <div id="pos-tab-log" class="pos-tab-content" style="display:none">
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+              <select id="log-estado-filter" onchange="renderPosLog()" style="border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;font-size:12px;outline:none">
+                <option value="">Todos los estados</option>
+                <option value="ok">✅ OK</option>
+                <option value="error">❌ Error</option>
+                <option value="ignorado">⏭️ Ignorado</option>
+              </select>
+              <button class="btn-primary" style="font-size:12px;padding:6px 14px;background:#dc2626" onclick="exportarLogExcel()">📊 Excel</button>
+              <button class="btn-cancel" style="font-size:12px;padding:6px 14px" onclick="renderPosLog()">🔄 Actualizar</button>
+            </div>
+            <div class="data-table">
+              <table><thead><tr>
+                <th>Fecha</th><th>Tipo Evento</th><th>Referencia POS</th>
+                <th>N° Asiento</th><th>Estado</th><th>Detalle</th>
+              </tr></thead>
+              <tbody id="pos-log-body"></tbody></table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- #main -->
+  </div><!-- flex body -->
+</div><!-- #app -->
+
+<!-- ═══ MODALES ═══════════════════════════════════════════════════════════ -->
+
+<!-- Modal: Nueva Cuenta -->
+<div id="cuenta-modal" class="modal-overlay">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header"><h3>Nueva Cuenta Contable</h3><button onclick="closeModal('cuenta-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button></div>
+    <form class="modal-form" id="cuenta-form">
+      <div class="form-grid">
+        <div class="form-field"><label>Código *</label><input type="text" id="c-codigo" placeholder="1.1.10" required></div>
+        <div class="form-field"><label>Nivel</label>
+          <select id="c-nivel"><option value="1">1 — Clase</option><option value="2">2 — Grupo</option><option value="3" selected>3 — Cuenta</option><option value="4">4 — Subcuenta</option></select>
+        </div>
+        <div class="form-field span2"><label>Nombre *</label><input type="text" id="c-nombre" placeholder="Nombre de la cuenta" required></div>
+        <div class="form-field"><label>Tipo *</label>
+          <select id="c-tipo">
+            <option value="activo">Activo</option><option value="pasivo">Pasivo</option>
+            <option value="capital">Capital</option><option value="ingreso">Ingreso</option>
+            <option value="costo">Costo</option><option value="gasto">Gasto</option>
+          </select>
+        </div>
+        <div class="form-field"><label>Naturaleza *</label>
+          <select id="c-naturaleza"><option value="deudora">Deudora</option><option value="acreedora">Acreedora</option></select>
+        </div>
+        <div class="form-field span2"><label>Cuenta Padre</label>
+          <select id="c-padre"><option value="">— Sin padre (cuenta raíz) —</option></select>
+        </div>
+        <div class="form-field span2" style="flex-direction:row;align-items:center;gap:10px">
+          <input type="checkbox" id="c-permite-mov" checked style="width:16px;height:16px">
+          <label for="c-permite-mov" style="text-transform:none;font-size:13px;font-weight:500;cursor:pointer">Permite registrar movimientos directos</label>
+        </div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn-cancel" onclick="closeModal('cuenta-modal')">Cancelar</button><button type="submit" class="btn-confirm">Guardar Cuenta</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Asiento Contable -->
+<div id="asiento-modal" class="modal-overlay">
+  <div class="modal" style="max-width:800px;max-height:90vh">
+    <div class="modal-header">
+      <h3>Nuevo Asiento Contable</h3>
+      <button onclick="closeModal('asiento-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button>
+    </div>
+    <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;max-height:calc(90vh - 80px)">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div class="form-field"><label>Fecha *</label><input type="date" id="a-fecha"></div>
+        <div class="form-field"><label>Tipo</label>
+          <select id="a-tipo"><option value="manual">Manual</option><option value="ajuste">Ajuste</option><option value="apertura">Apertura</option><option value="cierre">Cierre</option></select>
+        </div>
+        <div class="form-field"><label>Referencia</label><input type="text" id="a-ref" placeholder="N° doc, factura..."></div>
+        <div class="form-field" style="grid-column:span 3"><label>Concepto *</label><input type="text" id="a-concepto" placeholder="Descripción del asiento contable"></div>
+      </div>
+
+      <!-- Tabla de partidas -->
+      <div style="overflow-x:auto">
+        <table class="partidas-table" style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
+          <thead>
+            <tr>
+              <th style="width:220px">Cuenta</th>
+              <th>Descripción</th>
+              <th style="width:130px;text-align:right">Debe (L.)</th>
+              <th style="width:130px;text-align:right">Haber (L.)</th>
+              <th style="width:36px"></th>
+            </tr>
+          </thead>
+          <tbody id="partidas-body"></tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2" style="text-align:right;color:#64748b;font-size:12px">TOTALES</td>
+              <td style="text-align:right"><span id="total-debe" class="cuadre-ok">L. 0.00</span></td>
+              <td style="text-align:right"><span id="total-haber" class="cuadre-ok">L. 0.00</span></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td colspan="5" style="text-align:center;font-size:12px" id="cuadre-status"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <button type="button" class="btn-cancel" style="align-self:flex-start;font-size:12px" onclick="addPartida()">+ Agregar línea</button>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:8px;border-top:1px solid #e2e8f0">
+        <button type="button" class="btn-cancel" onclick="closeModal('asiento-modal')">Cancelar</button>
+        <button type="button" class="btn-primary" style="background:#059669" onclick="guardarAsiento(false)">💾 Guardar Borrador</button>
+        <button type="button" class="btn-primary" onclick="guardarAsiento(true)">✅ Guardar y Contabilizar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Ver Asiento -->
+<div id="ver-asiento-modal" class="modal-overlay">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-header">
+      <h3 id="ver-asiento-titulo">Asiento N° —</h3>
+      <button onclick="closeModal('ver-asiento-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button>
+    </div>
+    <div id="ver-asiento-body" style="padding:16px 20px 20px"></div>
+  </div>
+</div>
+
+<!-- Modal: Período -->
+<div id="periodo-modal" class="modal-overlay">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header"><h3>Abrir Período</h3><button onclick="closeModal('periodo-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button></div>
+    <form class="modal-form" id="periodo-form">
+      <div class="form-grid">
+        <div class="form-field"><label>Año *</label><input type="number" id="p-anio" min="2020" max="2099" placeholder="2026"></div>
+        <div class="form-field"><label>Mes *</label>
+          <select id="p-mes">
+            <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+            <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+            <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+            <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn-cancel" onclick="closeModal('periodo-modal')">Cancelar</button><button type="submit" class="btn-confirm">Abrir Período</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Empresa -->
+<div id="empresa-form-modal" class="modal-overlay">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header"><h3 id="empresa-form-titulo">Nueva Empresa</h3><button onclick="closeModal('empresa-form-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button></div>
+    <form class="modal-form" id="empresa-form">
+      <input type="hidden" id="ef-id">
+      <div class="form-grid">
+        <div class="form-field span2"><label>Razón Social *</label><input type="text" id="ef-nombre" placeholder="MI EMPRESA S. DE R.L." required></div>
+        <div class="form-field span2"><label>Nombre Comercial</label><input type="text" id="ef-comercial" placeholder="Mi Empresa"></div>
+        <div class="form-field"><label>RTN</label><input type="text" id="ef-rtn" placeholder="08011985024566"></div>
+        <div class="form-field"><label>Régimen</label>
+          <select id="ef-regimen"><option value="mercantil">Mercantil</option><option value="simplificado">Simplificado</option><option value="exonerado">Exonerado</option></select>
+        </div>
+        <div class="form-field span2"><label>Dirección</label><input type="text" id="ef-direccion" placeholder="Tegucigalpa, Honduras"></div>
+        <div class="form-field"><label>Teléfono</label><input type="text" id="ef-telefono" placeholder="2234-5678"></div>
+        <div class="form-field"><label>Email</label><input type="email" id="ef-email" placeholder="info@empresa.hn"></div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn-cancel" onclick="closeModal('empresa-form-modal')">Cancelar</button><button type="submit" class="btn-confirm">Guardar Empresa</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Usuario -->
+<div id="usuario-modal" class="modal-overlay">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header"><h3 id="user-modal-titulo">Nuevo Usuario</h3><button onclick="closeModal('usuario-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button></div>
+    <form class="modal-form" id="usuario-form">
+      <input type="hidden" id="u-id">
+      <div class="form-field"><label>Nombre *</label><input type="text" id="u-nombre" required></div>
+      <div class="form-field"><label>Usuario *</label><input type="text" id="u-username" required></div>
+      <div class="form-field"><label>Contraseña</label><input type="password" id="u-password" placeholder="Dejar vacío para no cambiar"></div>
+      <div class="form-field"><label>Rol</label>
+        <select id="u-rol">
+          <option value="contador">Contador</option>
+          <option value="supervisor">Supervisor</option>
+          <option value="admin">Admin</option>
+          <option value="superadmin">Super Admin</option>
+        </select>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn-cancel" onclick="closeModal('usuario-modal')">Cancelar</button><button type="submit" class="btn-confirm">Guardar</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Centro de Costo -->
+<div id="centro-modal" class="modal-overlay">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header"><h3>Centro de Costo</h3><button onclick="closeModal('centro-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button></div>
+    <form class="modal-form" id="centro-form">
+      <div class="form-field"><label>Código *</label><input type="text" id="cc-codigo" placeholder="VENTAS" required></div>
+      <div class="form-field"><label>Nombre *</label><input type="text" id="cc-nombre" placeholder="Departamento de Ventas" required></div>
+      <div class="modal-actions"><button type="button" class="btn-cancel" onclick="closeModal('centro-modal')">Cancelar</button><button type="submit" class="btn-confirm">Guardar</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Nuevo Activo Fijo -->
+<div id="activo-modal" class="modal-overlay">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header"><h3 id="activo-modal-titulo">Nuevo Activo Fijo</h3>
+      <button onclick="closeModal('activo-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button></div>
+    <form class="modal-form" id="activo-form">
+      <input type="hidden" id="af-id">
+      <div class="form-grid">
+        <div class="form-field"><label>Código *</label><input type="text" id="af-codigo" placeholder="EQ-001" required></div>
+        <div class="form-field"><label>Categoría *</label>
+          <select id="af-categoria">
+            <option value="equipo_computo">Equipo de Cómputo</option>
+            <option value="mobiliario">Mobiliario y Equipo</option>
+            <option value="vehiculo">Vehículo</option>
+            <option value="edificio">Edificio</option>
+            <option value="maquinaria">Maquinaria</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+        <div class="form-field span2"><label>Nombre / Descripción *</label><input type="text" id="af-nombre" required></div>
+        <div class="form-field"><label>Valor de Compra (L.) *</label><input type="number" step="0.01" id="af-valor-compra" required></div>
+        <div class="form-field"><label>Valor Residual (L.)</label><input type="number" step="0.01" id="af-valor-residual" value="0"></div>
+        <div class="form-field"><label>Vida Útil (años) *</label><input type="number" id="af-vida-util" min="1" max="100" value="5" required></div>
+        <div class="form-field"><label>Método Depreciación</label>
+          <select id="af-metodo">
+            <option value="linea_recta">Línea Recta</option>
+            <option value="saldo_decreciente">Saldo Decreciente Doble</option>
+          </select>
+        </div>
+        <div class="form-field"><label>Fecha de Compra *</label><input type="date" id="af-fecha-compra" required></div>
+        <div class="form-field"><label>Inicio Depreciación</label><input type="date" id="af-fecha-inicio-dep"></div>
+        <div class="form-field span2"><label>Cuenta Activo (1.2.xx)</label>
+          <select id="af-cta-activo"><option value="">— Seleccionar —</option></select></div>
+        <div class="form-field"><label>Cuenta Dep. Acumulada</label>
+          <select id="af-cta-dep-acum"><option value="">— Seleccionar —</option></select></div>
+        <div class="form-field"><label>Cuenta Gasto Depreciación</label>
+          <select id="af-cta-gasto-dep"><option value="">— Seleccionar —</option></select></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" onclick="closeModal('activo-modal')">Cancelar</button>
+        <button type="submit" class="btn-confirm">Guardar Activo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Depreciar período -->
+<div id="depreciar-modal" class="modal-overlay">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header"><h3>Ejecutar Depreciación</h3>
+      <button onclick="closeModal('depreciar-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button></div>
+    <div style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px">
+      <div class="form-field">
+        <label>Período a depreciar</label>
+        <select id="dep-periodo-sel" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%"></select>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="dep-generar-asiento" checked style="width:16px;height:16px">
+        <label for="dep-generar-asiento" style="font-size:13px;cursor:pointer">Generar asiento contable automático</label>
+      </div>
+      <div id="dep-resultado" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;font-size:13px"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" onclick="closeModal('depreciar-modal')">Cancelar</button>
+        <button type="button" class="btn-confirm" onclick="ejecutarDepreciacion()">⚙️ Calcular y Registrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Historial de depreciaciones de un activo -->
+<div id="dep-historial-modal" class="modal-overlay">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header"><h3 id="dep-historial-titulo">Historial de Depreciaciones</h3>
+      <button onclick="closeModal('dep-historial-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button></div>
+    <div style="padding:16px 20px 20px"><div id="dep-historial-body"></div></div>
+  </div>
+</div>
+
+<!-- Modal: Conexión POS -->
+<div id="conexion-modal" class="modal-overlay">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3 id="conexion-modal-titulo">Conectar Metric POS</h3>
+      <button onclick="closeModal('conexion-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button>
+    </div>
+    <form class="modal-form" id="conexion-form">
+      <input type="hidden" id="con-id">
+      <div class="form-field">
+        <label>Nombre de la conexión *</label>
+        <input type="text" id="con-nombre" placeholder="Ej: Sucursal Principal" required>
+      </div>
+      <div class="form-field">
+        <label>URL del Metric POS *</label>
+        <input type="url" id="con-url" placeholder="http://localhost:3000" required>
+        <span style="font-size:11px;color:#94a3b8">Incluye http:// y el puerto. Sin barra final.</span>
+      </div>
+      <div class="form-field">
+        <label>Token de autenticación POS</label>
+        <input type="text" id="con-token" placeholder="Token JWT del usuario admin del POS">
+        <span style="font-size:11px;color:#94a3b8">Inicia sesión en el POS y copia el token de localStorage (mp_token)</span>
+      </div>
+      <div class="form-field">
+        <label>ID de sucursal en el POS</label>
+        <input type="text" id="con-suc-id" placeholder="(opcional) filtra ventas por sucursal">
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="con-activa" checked style="width:16px;height:16px">
+        <label for="con-activa" style="font-size:13px;cursor:pointer">Conexión activa</label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" onclick="closeModal('conexion-modal')">Cancelar</button>
+        <button type="button" class="btn-cancel" onclick="probarConexion()" style="background:#eff6ff;color:#2563eb;border-color:#bfdbfe">🔌 Probar</button>
+        <button type="submit" class="btn-confirm">Guardar</button>
+      </div>
+      <div id="con-test-result" style="display:none;margin-top:8px;font-size:13px;padding:8px 12px;border-radius:8px"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Editar regla de mapeo -->
+<div id="regla-modal" class="modal-overlay">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h3 id="regla-modal-titulo">Configurar Regla de Mapeo</h3>
+      <button onclick="closeModal('regla-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button>
+    </div>
+    <form class="modal-form" id="regla-form">
+      <input type="hidden" id="regla-evento">
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin-bottom:4px">
+        <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Evento</div>
+        <div id="regla-evento-label" style="font-size:14px;font-weight:700;color:#1e3a5f;margin-top:4px"></div>
+        <div id="regla-descripcion" style="font-size:12px;color:#64748b;margin-top:2px"></div>
+      </div>
+      <div class="form-field">
+        <label>Cuenta DÉBITO (lo que aumenta) *</label>
+        <select id="regla-debito" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%">
+          <option value="">— Seleccionar cuenta —</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Cuenta CRÉDITO (lo que disminuye / ingreso) *</label>
+        <select id="regla-credito" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%">
+          <option value="">— Seleccionar cuenta —</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Cuenta ISV 15% (2.1.02)</label>
+        <select id="regla-isv15" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%">
+          <option value="">— Sin ISV 15% —</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Cuenta ISV 18% (2.1.03)</label>
+        <select id="regla-isv18" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%">
+          <option value="">— Sin ISV 18% —</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Cuenta Descuentos en Ventas (4.1.04)</label>
+        <select id="regla-descuento" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%">
+          <option value="">— Sin descuentos —</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="regla-activa" checked style="width:16px;height:16px">
+        <label for="regla-activa" style="font-size:13px;cursor:pointer">Regla activa</label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" onclick="closeModal('regla-modal')">Cancelar</button>
+        <button type="submit" class="btn-confirm">Guardar Regla</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── VISTA: LIBRO DE COMPRAS ISV ─────────────────────────────────────── -->
+<div id="libro-compras-view" class="view">
+  <div class="page">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Libro de Compras</div>
+        <div class="page-subtitle" id="lc-subtitle">Facturas de compra con ISV — Honduras SAR</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-secondary" onclick="exportarLibroCompras()" style="font-size:12px">📥 Exportar CSV</button>
+        <button class="btn-primary" onclick="openModal('lc-nueva-modal')">+ Nueva Compra</button>
+      </div>
+    </div>
+    <!-- Filtros -->
+    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin-bottom:18px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:4px">MES</label>
+        <select id="lc-mes" style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-size:13px;outline:none">
+          <option value="">Todos</option>
+          <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+          <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+          <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+          <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:4px">AÑO</label>
+        <input type="number" id="lc-anio" value="2026" min="2020" max="2099" style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-size:13px;outline:none;width:90px">
+      </div>
+      <span style="color:#94a3b8;font-size:12px;padding-bottom:4px">— ó rango libre —</span>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:4px">DESDE</label>
+        <input type="date" id="lc-fecha-ini" style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-size:13px;outline:none">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:4px">HASTA</label>
+        <input type="date" id="lc-fecha-fin" style="border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-size:13px;outline:none">
+      </div>
+      <button class="btn-primary" onclick="renderLibroCompras()">🔍 Filtrar</button>
+    </div>
+    <!-- Tabla -->
+    <div style="overflow-x:auto;border-radius:10px;border:1px solid #e2e8f0">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#1e3a5f;color:#fff">
+          <th style="padding:10px 8px;text-align:left">Fecha</th>
+          <th style="padding:10px 8px;text-align:left">RTN Proveedor</th>
+          <th style="padding:10px 8px;text-align:left">Nombre / Razón Social</th>
+          <th style="padding:10px 8px;text-align:left">No. Documento</th>
+          <th style="padding:10px 8px;text-align:right">Monto Total</th>
+          <th style="padding:10px 8px;text-align:right">Cps. Exentas</th>
+          <th style="padding:10px 8px;text-align:right">Base 15%</th>
+          <th style="padding:10px 8px;text-align:right;color:#93c5fd">ISV 15%</th>
+          <th style="padding:10px 8px;text-align:right">Base 18%</th>
+          <th style="padding:10px 8px;text-align:right;color:#c4b5fd">ISV 18%</th>
+        </tr></thead>
+        <tbody id="lc-body"><tr><td colspan="10" style="text-align:center;padding:20px;color:#94a3b8">Selecciona un período y presiona Filtrar</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Nueva Compra -->
+<div id="lc-nueva-modal" class="modal-overlay">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header"><h3>Registrar Compra</h3><button onclick="closeModal('lc-nueva-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button></div>
+    <form onsubmit="guardarCompra(event)" style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-field"><label>Fecha *</label><input type="date" name="fecha" required></div>
+        <div class="form-field"><label>RTN Proveedor</label><input type="text" name="rtn" placeholder="08011234567890"></div>
+      </div>
+      <div class="form-field"><label>Nombre / Razón Social *</label><input type="text" name="proveedor" required placeholder="Distribuidora Honduras S.A."></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-field"><label>No. Documento</label><input type="text" name="nodoc" placeholder="001-001-01-00000001"></div>
+        <div class="form-field"><label>CAI</label><input type="text" name="cai" placeholder="XXXXXX-..."></div>
+      </div>
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px">
+        <div style="font-size:11px;font-weight:700;color:#15803d;margin-bottom:8px">DESGLOSE ISV</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div class="form-field"><label>Base Gravada 15%</label><input type="number" step="0.01" min="0" name="base15" value="0" oninput="calcTotalCompra(this.form)"></div>
+          <div class="form-field"><label>Base Gravada 18%</label><input type="number" step="0.01" min="0" name="base18" value="0" oninput="calcTotalCompra(this.form)"></div>
+          <div class="form-field"><label>Compras Exentas</label><input type="number" step="0.01" min="0" name="exenta" value="0" oninput="calcTotalCompra(this.form)"></div>
+        </div>
+        <div style="margin-top:8px;padding:8px 10px;background:#fff;border-radius:6px;font-size:13px;font-weight:700;color:#1e3a5f">
+          Total: <span id="lc-total-preview">L. 0.00</span>
+          &nbsp;|&nbsp; ISV 15%: <span id="lc-isv15-preview">L. 0.00</span>
+          &nbsp;|&nbsp; ISV 18%: <span id="lc-isv18-preview">L. 0.00</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button type="button" class="btn-cancel" onclick="closeModal('lc-nueva-modal')">Cancelar</button>
+        <button type="submit" class="btn-primary">💾 Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Editar Asiento -->
+<div id="edit-asiento-modal" class="modal-overlay">
+  <div class="modal" style="max-width:860px;max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <h3 id="edit-asiento-titulo">Modificar Asiento</h3>
+      <button onclick="closeModal('edit-asiento-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button>
+    </div>
+    <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+      <input type="hidden" id="edit-a-id">
+      <div style="display:grid;grid-template-columns:1fr 2fr 1fr;gap:12px">
+        <div class="form-field"><label>Fecha *</label><input type="date" id="edit-a-fecha" required></div>
+        <div class="form-field"><label>Concepto *</label><input type="text" id="edit-a-concepto" required></div>
+        <div class="form-field"><label>Tipo</label>
+          <select id="edit-a-tipo" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;outline:none;width:100%">
+            <option value="manual">Manual</option><option value="ajuste">Ajuste</option>
+            <option value="apertura">Apertura</option><option value="cierre">Cierre</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-field"><label>Referencia</label><input type="text" id="edit-a-referencia" placeholder="Documento de referencia..."></div>
+      <div id="edit-a-cuadre-alert" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;color:#dc2626;font-size:13px;font-weight:600">
+        ⚠️ El asiento no cuadra — Débitos ≠ Créditos
+      </div>
+      <div style="overflow-x:auto;border-radius:8px;border:1px solid #e2e8f0">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:#f8fafc">
+            <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #e2e8f0">Cuenta</th>
+            <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #e2e8f0">Descripción</th>
+            <th style="padding:8px 10px;text-align:right;border-bottom:1px solid #e2e8f0;width:120px">Debe</th>
+            <th style="padding:8px 10px;text-align:right;border-bottom:1px solid #e2e8f0;width:120px">Haber</th>
+            <th style="padding:8px 10px;border-bottom:1px solid #e2e8f0;width:40px"></th>
+          </tr></thead>
+          <tbody id="edit-a-partidas-body"></tbody>
+        </table>
+      </div>
+      <button onclick="agregarPartidaEdit()" class="btn-secondary" style="font-size:12px;width:fit-content">+ Agregar cuenta</button>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button type="button" class="btn-cancel" onclick="closeModal('edit-asiento-modal')">Cancelar</button>
+        <button type="button" class="btn-primary" onclick="guardarEdicionAsiento()">💾 Guardar cambios</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Buscar cuenta para edición -->
+<div id="edit-buscar-cuenta-modal" class="modal-overlay">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header"><h3>Seleccionar Cuenta</h3><button onclick="closeModal('edit-buscar-cuenta-modal')" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8">✕</button></div>
+    <div style="padding:16px 20px">
+      <input type="text" id="edit-buscar-q" placeholder="Código o nombre de la cuenta..."
+        oninput="filtrarCuentasEdit(this.value)"
+        style="width:100%;border:1px solid #e2e8f0;border-radius:8px;padding:9px 12px;font-size:13px;outline:none;box-sizing:border-box;margin-bottom:8px">
+      <div id="edit-buscar-resultados" style="max-height:300px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px"></div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
