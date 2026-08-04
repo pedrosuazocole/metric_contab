@@ -15,7 +15,12 @@ const initSqlJs = require('sql.js');
 const app  = express();
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || 'metric_contab_2026_hn';
-const DB_FILE    = path.join(__dirname,'data','contab.db');
+// Ruta de BD: usa variable de entorno del volumen Railway si existe
+const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH
+               || process.env.DATA_DIR
+               || path.join(__dirname,'data');
+const DB_FILE  = path.join(DATA_DIR,'contab.db');
+console.log('📁 DB path:', DB_FILE);
 
 app.use(cors());
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -25,7 +30,7 @@ app.use(express.static(path.join(__dirname,'public')));
 let db; let SQL;
 
 async function initDB() {
-  if (!fs.existsSync(path.join(__dirname,'data'))) fs.mkdirSync(path.join(__dirname,'data'));
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, {recursive:true});
   SQL = await initSqlJs();
   if (fs.existsSync(DB_FILE)) { db=new SQL.Database(fs.readFileSync(DB_FILE)); console.log('📂 DB cargada'); }
   else { db=new SQL.Database(); console.log('🆕 DB nueva'); }
@@ -871,37 +876,48 @@ app.get('/api/empresas/:empresa_id/cuentas/exportar', authEmpresa(), (req,res) =
 
 // ── PLAN DE CUENTAS: IMPORTAR CSV ────────────────────────────────────────────
 app.post('/api/empresas/:empresa_id/cuentas/importar', authEmpresa(), (req,res) => {
-  const {cuentas} = req.body;
+  const {cuentas, reemplazar} = req.body;
   const eid = req.params.empresa_id;
   if (!Array.isArray(cuentas)||!cuentas.length)
     return res.status(400).json({error:'No se recibieron cuentas'});
   const errores=[], creadas_ids=[];
-  let creadas=0, omitidas=0;
+  let creadas=0, actualizadas=0, omitidas=0;
   run(`BEGIN TRANSACTION`);
   try {
     for (const c of cuentas) {
       const {codigo_cuenta,nombre,tipo,nivel,cuenta_padre} = c;
       if (!codigo_cuenta||!nombre||!tipo) { errores.push(`Fila incompleta: ${codigo_cuenta||'?'}`); continue; }
       const tiposOK = ['activo','pasivo','capital','ingreso','costo','gasto'];
-      if (!tiposOK.includes((tipo||'').toLowerCase())) { errores.push(`Tipo inválido en ${codigo_cuenta}: ${tipo}`); continue; }
+      const tipoNorm = (tipo||'').toLowerCase().trim();
+      if (!tiposOK.includes(tipoNorm)) { errores.push(`Tipo inválido en ${codigo_cuenta}: ${tipo}`); continue; }
       const existe = get(`SELECT id FROM cuentas WHERE empresa_id=? AND codigo=?`,[eid,codigo_cuenta]);
-      if (existe) { omitidas++; continue; }
       let padre_id = null;
       if (cuenta_padre) {
         const padre = get(`SELECT id FROM cuentas WHERE empresa_id=? AND codigo=?`,[eid,cuenta_padre]);
-        if (!padre) { errores.push(`Cuenta padre no encontrada: ${cuenta_padre} (para ${codigo_cuenta})`); continue; }
-        padre_id = padre.id;
+        if (padre) padre_id = padre.id;
+        // Si no encuentra el padre, continúa sin padre (no bloquear importación)
       }
-      const nat = ['activo','costo','gasto'].includes((tipo||'').toLowerCase()) ? 'deudora' : 'acreedora';
+      const nat = ['activo','costo','gasto'].includes(tipoNorm) ? 'deudora' : 'acreedora';
+      if (existe) {
+        if (reemplazar) {
+          // Actualizar la cuenta existente
+          run(`UPDATE cuentas SET nombre=?,tipo=?,naturaleza=?,nivel=?,padre_id=? WHERE id=?`,
+            [nombre, tipoNorm, nat, parseInt(nivel)||1, padre_id, existe.id]);
+          actualizadas++;
+        } else {
+          omitidas++;
+        }
+        continue;
+      }
       const cid = uuid();
       run(`INSERT INTO cuentas(id,empresa_id,codigo,nombre,tipo,naturaleza,nivel,padre_id,permite_movimiento,activa)
            VALUES(?,?,?,?,?,?,?,?,1,1)`,
-        [cid,eid,codigo_cuenta,nombre,(tipo||'').toLowerCase(),nat,parseInt(nivel)||1,padre_id]);
+        [cid,eid,codigo_cuenta,nombre,tipoNorm,nat,parseInt(nivel)||1,padre_id]);
       creadas++; creadas_ids.push(cid);
     }
     run(`COMMIT`);
     saveDB();
-    res.json({creadas,omitidas,errores,total:cuentas.length});
+    res.json({creadas,actualizadas,omitidas,errores,total:cuentas.length});
   } catch(err) {
     run(`ROLLBACK`);
     res.status(500).json({error:'Error en transacción: '+err.message});
@@ -956,7 +972,11 @@ app.get('/api/empresas/:empresa_id/balance_comprobacion', authEmpresa(), (req,re
   const saldos = filas.map(f => {
     const debe  = parseFloat(f.total_debe)||0;
     const haber = parseFloat(f.total_haber)||0;
-    const neto  = f.naturaleza==='deudora' ? debe-haber : haber-debe;
+    // El Balance de Comprobación compara debe vs. haber directamente,
+    // sin reclasificar según la naturaleza de la cuenta. Voltear el signo
+    // aquí rompe la identidad debe=haber cuando una cuenta tiene saldo
+    // "contra su naturaleza" (ej. un pasivo con saldo deudor).
+    const neto  = debe-haber;
     return {...f, saldo_deudor: neto>0?neto:0, saldo_acreedor: neto<0?Math.abs(neto):0};
   });
   res.json(saldos);
@@ -1173,7 +1193,7 @@ app.post('/api/empresas/:empresa_id/cierre', authEmpresa(), (req,res) => {
 
     // Calcular PyG del período
     const datos = all(
-      `SELECT c.tipo,c.naturaleza,SUM(ap.debe) as debe,SUM(ap.haber) as haber
+      `SELECT c.id,c.codigo,c.nombre,c.tipo,c.naturaleza,SUM(ap.debe) as debe,SUM(ap.haber) as haber
        FROM asiento_partidas ap JOIN asientos a ON a.id=ap.asiento_id JOIN cuentas c ON c.id=ap.cuenta_id
        WHERE a.empresa_id=? AND a.estado='contabilizado' AND a.periodo_id=?
        AND c.tipo IN('ingreso','costo','gasto') AND c.permite_movimiento=1

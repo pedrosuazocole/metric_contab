@@ -66,6 +66,7 @@ const NAV = [
   {view:'usuarios',   label:'👤 Usuarios',           roles:['superadmin','admin']},
   {view:'activos',    label:'🏭 Activos Fijos',       roles:['superadmin','admin','contador']},
   {view:'cierre',     label:'🔒 Cierre Contable',      roles:['superadmin','admin','contador']},
+  {view:'reportes',    label:'📑 Reportes',            roles:['superadmin','admin','contador','supervisor']},
   {view:'sar',        label:'📋 Reportes SAR',         roles:['superadmin','admin','contador','supervisor']},
   {view:'config-sar', label:'⚙️ Config SAR',           roles:['superadmin','admin']},
   {view:'pos',        label:'🔗 Integración POS',     roles:['superadmin','admin','contador']},
@@ -101,6 +102,7 @@ function renderView(v) {
     case 'centros':    renderCentros(); break;
     case 'activos':    renderActivos(); break;
     case 'cierre':     renderCierre(); break;
+    case 'reportes':   renderReportes(); break;
     case 'sar':        renderSAR(); break;
     case 'config-sar': renderConfigSAR(); break;
     case 'pos':        renderPOS_Integracion(); break;
@@ -2196,13 +2198,34 @@ async function importarPlanCuentas(input) {
     if (row.codigo_cuenta) cuentas.push(row);
   }
   if (!cuentas.length) return alert('No se encontraron filas válidas en el CSV.');
-  try {
-    const r = await POST(`/empresas/${eid()}/cuentas/importar`, {cuentas});
-    let msg = `✅ Importación completada:\n• Creadas: ${r.creadas}\n• Omitidas (ya existen): ${r.omitidas}`;
-    if (r.errores?.length) msg+=`\n⚠️ Errores:\n`+r.errores.slice(0,5).join('\n');
-    alert(msg);
-    if (r.creadas>0) renderCuentas();
-  } catch(e) { alert('Error al importar: '+e.message); }
+
+  // Preguntar si reemplazar cuando ya existen cuentas
+  let reemplazar = false;
+  const precheck = await POST(`/empresas/${eid()}/cuentas/importar`, {cuentas, reemplazar: false});
+  if (precheck.omitidas > 0) {
+    const resp = confirm(
+      `⚠️ Se encontraron ${precheck.omitidas} cuentas que ya existen en el plan de cuentas.\n\n` +
+      `¿Deseas actualizar (reemplazar) las cuentas existentes con los datos del archivo?\n\n` +
+      `• Aceptar → Actualiza las ${precheck.omitidas} existentes y crea las ${precheck.creadas} nuevas\n` +
+      `• Cancelar → Solo crea las ${precheck.creadas} nuevas (omite las existentes)`
+    );
+    if (resp) {
+      // Hacer la importación real con reemplazar=true
+      try {
+        const r2 = await POST(`/empresas/${eid()}/cuentas/importar`, {cuentas, reemplazar: true});
+        let msg = `✅ Importación completada:\n• Creadas: ${r2.creadas}\n• Actualizadas: ${r2.actualizadas}\n• Omitidas: ${r2.omitidas}`;
+        if (r2.errores?.length) msg += `\n⚠️ Errores (${r2.errores.length}):\n` + r2.errores.slice(0,5).join('\n');
+        alert(msg);
+        renderCuentas();
+      } catch(e) { alert('Error al importar: '+e.message); }
+      input.value=''; return;
+    }
+  }
+  // Mostrar resultado del precheck (solo nuevas)
+  let msg = `✅ Importación completada:\n• Creadas: ${precheck.creadas}\n• Actualizadas: ${precheck.actualizadas||0}\n• Omitidas (ya existen): ${precheck.omitidas}`;
+  if (precheck.errores?.length) msg += `\n⚠️ Errores (${precheck.errores.length}):\n` + precheck.errores.slice(0,5).join('\n');
+  alert(msg);
+  if (precheck.creadas > 0) renderCuentas();
   input.value='';
 }
 
@@ -2313,4 +2336,577 @@ async function guardarCompra(e) {
     form.reset(); calcTotalCompra(form);
     renderLibroCompras();
   } catch(err) { alert('Error: '+err.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MÓDULO: REPORTES CONTABLES
+// ═══════════════════════════════════════════════════════════════════════════
+
+// CSS responsive inyectado una sola vez
+(function injectRepCSS(){
+  if(document.getElementById('rep-style')) return;
+  const s=document.createElement('style');
+  s.id='rep-style';
+  s.textContent=`
+    @media print{
+      @page{margin:12mm}
+      .rep-no-print{display:none!important}
+      body{font-size:11px}
+      .rep-table th,.rep-table td{padding:5px 6px!important}
+    }
+    .rep-wrap{font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1e293b;max-width:100%}
+    .rep-header{background:#1e3a5f;color:#fff;padding:16px 20px;text-align:center;border-radius:8px 8px 0 0}
+    .rep-header h2{margin:0;font-size:17px}
+    .rep-header p{margin:4px 0 0;font-size:12px;opacity:.8}
+    .rep-table{width:100%;border-collapse:collapse;font-size:12px}
+    .rep-table th{background:#1e3a5f;color:#fff;padding:8px 10px;text-align:left;white-space:nowrap}
+    .rep-table th.r,.rep-table td.r{text-align:right}
+    .rep-table td{padding:7px 10px;border-bottom:1px solid #f1f5f9}
+    .rep-table tr:nth-child(even) td{background:#f8fafc}
+    .rep-total td{background:#1e3a5f!important;color:#fff;font-weight:700;padding:8px 10px}
+    .rep-subtotal td{background:#ecfdf5!important;font-weight:700;color:#15803d}
+    .rep-seccion{background:#f0f4ff;font-weight:700;color:#1e3a5f}
+    .rep-seccion td{padding:9px 10px!important}
+    .rep-cuadre-ok{background:#f0fdf4;color:#15803d;text-align:center;padding:8px;font-weight:700;font-size:12px;border-top:2px solid #86efac}
+    .rep-cuadre-err{background:#fef2f2;color:#dc2626;text-align:center;padding:8px;font-weight:700;font-size:12px;border-top:2px solid #fca5a5}
+    .rep-comprobante{border:1px solid #e2e8f0;border-radius:8px;margin-bottom:14px;overflow:hidden}
+    .rep-comp-header{background:#f8fafc;padding:10px 14px;border-bottom:1px solid #e2e8f0}
+    @media(max-width:600px){
+      .rep-table th,.rep-table td{padding:6px 7px;font-size:11px}
+      .rep-header h2{font-size:14px}
+      .rep-wrap{font-size:12px}
+    }`;
+  document.head.appendChild(s);
+})();
+
+// ── Helpers comunes ───────────────────────────────────────────────────────────
+function _repParams() {
+  const fi  = (document.getElementById('rep-fecha-ini')||{}).value||'';
+  const ff  = (document.getElementById('rep-fecha-fin')||{}).value||'';
+  const pid = (document.getElementById('rep-periodo')||{}).value||PERIODO?.id||'';
+  let p='';
+  if (pid)  p+=`periodo_id=${pid}`;
+  if (fi)   p+=(p?'&':'')+`fecha_ini=${fi}`;
+  if (ff)   p+=(p?'&':'')+`fecha_fin=${ff}`;
+  return p;
+}
+function _repFiltroLabel() {
+  const fi  = (document.getElementById('rep-fecha-ini')||{}).value||'';
+  const ff  = (document.getElementById('rep-fecha-fin')||{}).value||'';
+  const pid = (document.getElementById('rep-periodo')||{}).value||'';
+  const pNom = periodos_cache.find(p=>p.id===pid)?.nombre||'';
+  if (pNom)  return pNom;
+  if (fi&&ff) return `Del ${fi} al ${ff}`;
+  if (fi)    return `Desde ${fi}`;
+  if (ff)    return `Hasta ${ff}`;
+  return 'Todos los períodos';
+}
+function _abrirVentana(html) {
+  const w=window.open('','_blank','width=960,height=720');
+  if(w){ w.document.write(html); w.document.close(); }
+}
+
+// ── Inicializar la vista de reportes ─────────────────────────────────────────
+async function renderReportes() {
+  poblarSelectPeriodos('rep-periodo');
+  // Poblar cuentas en el selector del Mayor
+  const sel = document.getElementById('rep-mayor-cuenta');
+  if (sel && eid()) {
+    const cuentas = await GET(`/empresas/${eid()}/cuentas`);
+    sel.innerHTML = '<option value="">— Todas las cuentas —</option>' +
+      cuentas.filter(c=>c.permite_movimiento)
+        .map(c=>`<option value="${c.id}">${c.codigo} — ${c.nombre}</option>`).join('');
+  }
+}
+
+// ══ 1. PLAN DE CUENTAS ═══════════════════════════════════════════════════════
+async function imprimirRepPlanCuentas() {
+  if (!eid()) return;
+  try {
+    const cuentas = await GET(`/empresas/${eid()}/cuentas`);
+    const filas = cuentas.map(c=>`<tr>
+      <td style="font-family:monospace">${c.codigo}</td>
+      <td style="padding-left:${(c.nivel-1)*14}px">${c.nombre}</td>
+      <td>${TIPO_LABELS[c.tipo]||c.tipo}</td>
+      <td>${c.naturaleza==='deudora'?'Deudora':'Acreedora'}</td>
+      <td style="text-align:center">${c.permite_movimiento?'✓':'—'}</td>
+    </tr>`).join('');
+    _abrirVentana(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>Plan de Cuentas</title>
+      <style>*{font-family:Arial,sans-serif;font-size:12px}body{padding:20px}
+      h2,h3{color:#1e3a5f;text-align:center;margin:4px 0}
+      table{width:100%;border-collapse:collapse;margin-top:14px}
+      th{background:#1e3a5f;color:#fff;padding:7px 9px;text-align:left}
+      td{padding:6px 9px;border-bottom:1px solid #f1f5f9}
+      tr:nth-child(even) td{background:#f8fafc}
+      @media print{@page{margin:12mm}}</style>
+      </head><body>
+      <h2>${EMPRESA?.nombre||''}</h2>
+      <h3>Plan de Cuentas Contables</h3>
+      <p style="text-align:center;color:#64748b;font-size:11px">${_repFiltroLabel()}</p>
+      <table>
+        <thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Naturaleza</th><th style="text-align:center">Mov.</th></tr></thead>
+        <tbody>${filas}</tbody>
+        <tfoot><tr style="background:#1e3a5f;color:#fff;font-weight:700">
+          <td colspan="5" style="padding:8px 9px">Total cuentas: ${cuentas.length}</td>
+        </tr></tfoot>
+      </table>
+      <script>window.print();<\/script></body></html>`);
+  } catch(e){ alert(e.message); }
+}
+
+async function excelRepPlanCuentas() {
+  if (!eid()) return;
+  try {
+    const cuentas = await GET(`/empresas/${eid()}/cuentas`);
+    const rows=[['Código','Nombre','Tipo','Naturaleza','Permite Movimiento']];
+    cuentas.forEach(c=>rows.push([c.codigo,c.nombre,c.tipo,c.naturaleza,c.permite_movimiento?'Sí':'No']));
+    xlsxDownload(rows,'Plan_de_Cuentas');
+  } catch(e){ alert(e.message); }
+}
+
+// ══ 2. MAYOR GENERAL / ANALÍTICO ═════════════════════════════════════════════
+async function imprimirRepMayor() {
+  if (!eid()) return;
+  const cuentaId = (document.getElementById('rep-mayor-cuenta')||{}).value||'';
+  const p = _repParams();
+  try {
+    // Si hay cuenta específica
+    if (cuentaId) {
+      const data = await GET(`/empresas/${eid()}/mayor`, p+`${p?'&':''}cuenta_id=${cuentaId}`);
+      const c = data.cuenta;
+      const filas = data.partidas.map(r=>`<tr>
+        <td>${r.fecha}</td><td>${r.numero}</td>
+        <td>${r.concepto}</td><td>${r.descripcion||'—'}</td>
+        <td class="r">${r.debe>0?fL(r.debe):'—'}</td>
+        <td class="r">${r.haber>0?fL(r.haber):'—'}</td>
+        <td class="r" style="font-weight:700">${fL(r.saldo)}</td>
+      </tr>`).join('');
+      _abrirVentana(_htmlMayorCuenta(c, filas, data.total_debe, data.total_haber));
+    } else {
+      // Todas las cuentas
+      const cuentas = await GET(`/empresas/${eid()}/cuentas`);
+      const movs = cuentas.filter(c=>c.permite_movimiento);
+      let bloques='';
+      for (const c of movs) {
+        const data = await GET(`/empresas/${eid()}/mayor`, p+`${p?'&':''}cuenta_id=${c.id}`);
+        if (!data.partidas?.length) continue;
+        const filas = data.partidas.map(r=>`<tr>
+          <td>${r.fecha}</td><td>${r.numero}</td>
+          <td>${r.concepto}</td><td>${r.descripcion||'—'}</td>
+          <td class="r">${r.debe>0?fL(r.debe):'—'}</td>
+          <td class="r">${r.haber>0?fL(r.haber):'—'}</td>
+          <td class="r" style="font-weight:700">${fL(r.saldo)}</td>
+        </tr>`).join('');
+        bloques += _htmlMayorCuenta(c, filas, data.total_debe, data.total_haber, true);
+      }
+      _abrirVentana(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+        <title>Mayor General</title>
+        <style>*{font-family:Arial,sans-serif;font-size:12px}body{padding:20px}
+        h2,h3{color:#1e3a5f;text-align:center;margin:4px 0}
+        table{width:100%;border-collapse:collapse;margin-bottom:20px}
+        th{background:#1e3a5f;color:#fff;padding:7px 9px;text-align:left}
+        td{padding:6px 9px;border-bottom:1px solid #f1f5f9}
+        .r{text-align:right}.tf td{background:#f0fdf4;font-weight:700}
+        tr:nth-child(even) td{background:#f8fafc}
+        .cta-titulo{background:#e0f2fe;font-weight:700;padding:8px 10px;color:#0369a1;margin-top:12px;border-radius:4px}
+        @media print{@page{margin:12mm}.cta-titulo{page-break-before:auto}}</style>
+        </head><body>
+        <h2>${EMPRESA?.nombre||''}</h2>
+        <h3>Mayor General / Analítico</h3>
+        <p style="text-align:center;color:#64748b;font-size:11px">${_repFiltroLabel()}</p>
+        ${bloques}
+        <script>window.print();<\/script></body></html>`);
+    }
+  } catch(e){ alert(e.message); }
+}
+
+function _htmlMayorCuenta(c, filas, tdebe, thaber, soloTabla=false) {
+  const tabla=`<div class="cta-titulo">${c.codigo} — ${c.nombre} &nbsp;|&nbsp; ${c.tipo} &nbsp;|&nbsp; ${c.naturaleza}</div>
+    <table>
+      <thead><tr>
+        <th>Fecha</th><th>Asiento</th><th>Concepto</th><th>Descripción</th>
+        <th class="r">Debe</th><th class="r">Haber</th><th class="r">Saldo</th>
+      </tr></thead>
+      <tbody>${filas}</tbody>
+      <tfoot><tr class="tf">
+        <td colspan="4" style="padding:7px 9px;text-align:right">TOTALES</td>
+        <td class="r" style="padding:7px 9px">${fL(tdebe)}</td>
+        <td class="r" style="padding:7px 9px">${fL(thaber)}</td>
+        <td class="r" style="padding:7px 9px"></td>
+      </tr></tfoot>
+    </table>`;
+  if(soloTabla) return tabla;
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Mayor — ${c.codigo}</title>
+    <style>*{font-family:Arial,sans-serif;font-size:12px}body{padding:20px}
+    h2,h3{color:#1e3a5f;text-align:center;margin:4px 0}
+    table{width:100%;border-collapse:collapse;margin-top:14px}
+    th{background:#1e3a5f;color:#fff;padding:7px 9px;text-align:left}
+    td{padding:6px 9px;border-bottom:1px solid #f1f5f9}
+    .r{text-align:right}.tf td{background:#f0fdf4;font-weight:700}
+    tr:nth-child(even) td{background:#f8fafc}
+    .cta-titulo{background:#e0f2fe;font-weight:700;padding:8px 10px;color:#0369a1;border-radius:4px;margin-bottom:4px}
+    @media print{@page{margin:12mm}}</style></head><body>
+    <h2>${EMPRESA?.nombre||''}</h2>
+    <h3>Mayor General</h3>
+    <p style="text-align:center;color:#64748b;font-size:11px">${_repFiltroLabel()}</p>
+    ${tabla}
+    <script>window.print();<\/script></body></html>`;
+}
+
+async function excelRepMayor() {
+  if (!eid()) return;
+  const cuentaId = (document.getElementById('rep-mayor-cuenta')||{}).value||'';
+  const p = _repParams();
+  try {
+    const cuentas = cuentaId
+      ? [await GET(`/empresas/${eid()}/cuentas`).then(l=>l.find(c=>c.id===cuentaId))]
+      : (await GET(`/empresas/${eid()}/cuentas`)).filter(c=>c.permite_movimiento);
+    const rows=[['Cuenta','Fecha','Asiento','Concepto','Descripción','Debe','Haber','Saldo']];
+    for (const c of cuentas) {
+      if (!c) continue;
+      const data = await GET(`/empresas/${eid()}/mayor`, p+`${p?'&':''}cuenta_id=${c.id}`);
+      if (!data.partidas?.length) continue;
+      data.partidas.forEach(r=>rows.push([
+        `${c.codigo} — ${c.nombre}`, r.fecha, r.numero,
+        r.concepto, r.descripcion||'',
+        parseFloat(r.debe)||0, parseFloat(r.haber)||0, parseFloat(r.saldo)||0
+      ]));
+      rows.push(['','','','TOTAL','',data.total_debe,data.total_haber,'']);
+      rows.push([]);
+    }
+    xlsxDownload(rows,'Mayor_General');
+  } catch(e){ alert(e.message); }
+}
+
+// ══ 3. BALANCE DE COMPROBACIÓN ════════════════════════════════════════════════
+async function imprimirRepBalComp() {
+  if (!eid()) return;
+  try {
+    const data = await GET(`/empresas/${eid()}/balance_comprobacion`, _repParams());
+    let tdebe=0,thaber=0,tdeud=0,tacre=0;
+    const filas = data.map(f=>{
+      tdebe+=parseFloat(f.total_debe)||0; thaber+=parseFloat(f.total_haber)||0;
+      tdeud+=parseFloat(f.saldo_deudor)||0; tacre+=parseFloat(f.saldo_acreedor)||0;
+      return `<tr>
+        <td style="font-family:monospace;font-weight:600">${f.codigo}</td>
+        <td>${f.nombre}</td>
+        <td>${TIPO_LABELS[f.tipo]||f.tipo}</td>
+        <td class="r">${fL(f.total_debe)}</td>
+        <td class="r">${fL(f.total_haber)}</td>
+        <td class="r" style="color:#1d4ed8">${f.saldo_deudor>0?fL(f.saldo_deudor):'—'}</td>
+        <td class="r" style="color:#dc2626">${f.saldo_acreedor>0?fL(f.saldo_acreedor):'—'}</td>
+      </tr>`;
+    }).join('');
+    const cuadra = Math.abs(tdeud-tacre)<0.01;
+    _abrirVentana(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>Balance de Comprobación</title>
+      <style>*{font-family:Arial,sans-serif;font-size:12px}body{padding:20px}
+      h2,h3{color:#1e3a5f;text-align:center;margin:4px 0}
+      table{width:100%;border-collapse:collapse;margin-top:14px}
+      th{background:#1e3a5f;color:#fff;padding:7px 9px;text-align:left}
+      td{padding:6px 9px;border-bottom:1px solid #f1f5f9}
+      .r{text-align:right}
+      tr:nth-child(even) td{background:#f8fafc}
+      .tf td{background:#1e3a5f;color:#fff;font-weight:700;padding:8px 9px}
+      .cuadre{text-align:center;padding:8px;font-weight:700;font-size:12px;margin-top:6px;border-radius:4px}
+      @media print{@page{size:letter landscape;margin:12mm}}</style>
+      </head><body>
+      <h2>${EMPRESA?.nombre||''}</h2>
+      <h3>Balance de Comprobación</h3>
+      <p style="text-align:center;color:#64748b;font-size:11px">${_repFiltroLabel()}</p>
+      <table>
+        <thead><tr>
+          <th>Código</th><th>Cuenta</th><th>Tipo</th>
+          <th class="r">Total Debe</th><th class="r">Total Haber</th>
+          <th class="r">Saldo Deudor</th><th class="r">Saldo Acreedor</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+        <tfoot>
+          <tr class="tf">
+            <td colspan="3">TOTALES</td>
+            <td class="r">${fL(tdebe)}</td>
+            <td class="r">${fL(thaber)}</td>
+            <td class="r">${fL(tdeud)}</td>
+            <td class="r">${fL(tacre)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="cuadre" style="background:${cuadra?'#f0fdf4':'#fef2f2'};color:${cuadra?'#15803d':'#dc2626'}">
+        ${cuadra?'✓ Balance correcto — Saldos Deudores = Saldos Acreedores':'⚠ Diferencia: L. '+Math.abs(tdeud-tacre).toFixed(2)+' — Revisar asientos'}
+      </div>
+      <script>window.print();<\/script></body></html>`);
+  } catch(e){ alert(e.message); }
+}
+
+async function excelRepBalComp() {
+  if (!eid()) return;
+  try {
+    const data = await GET(`/empresas/${eid()}/balance_comprobacion`, _repParams());
+    let tdebe=0,thaber=0,tdeud=0,tacre=0;
+    const rows=[['Código','Cuenta','Tipo','Total Debe','Total Haber','Saldo Deudor','Saldo Acreedor']];
+    data.forEach(f=>{
+      tdebe+=parseFloat(f.total_debe)||0; thaber+=parseFloat(f.total_haber)||0;
+      tdeud+=parseFloat(f.saldo_deudor)||0; tacre+=parseFloat(f.saldo_acreedor)||0;
+      rows.push([f.codigo,f.nombre,f.tipo,parseFloat(f.total_debe)||0,parseFloat(f.total_haber)||0,
+        parseFloat(f.saldo_deudor)||0,parseFloat(f.saldo_acreedor)||0]);
+    });
+    rows.push([]);
+    rows.push(['','TOTALES','',tdebe,thaber,tdeud,tacre]);
+    xlsxDownload(rows,'Balance_Comprobacion');
+  } catch(e){ alert(e.message); }
+}
+
+// ══ 4. ESTADO DE RESULTADOS ═══════════════════════════════════════════════════
+async function imprimirRepResultados() {
+  if (!eid()) return;
+  try {
+    const {detalle:d,totales:t} = await GET(`/empresas/${eid()}/estado_resultados`, _repParams());
+    const seccion=(titulo,items,color)=> items.length ? `
+      <tr><td colspan="2" style="background:#f0f4ff;font-weight:700;color:#1e3a5f;padding:8px 10px">${titulo}</td></tr>
+      ${items.map(f=>`<tr>
+        <td style="padding-left:${f.codigo?.split('.').length>2?'22px':'10px'};font-size:12px">${f.codigo} — ${f.nombre}</td>
+        <td class="r" style="color:${color}">${fL(f.monto)}</td>
+      </tr>`).join('')}` : '';
+    _abrirVentana(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>Estado de Resultados</title>
+      <style>*{font-family:Arial,sans-serif;font-size:12px}body{padding:20px;max-width:700px;margin:0 auto}
+      h2,h3{color:#1e3a5f;text-align:center;margin:4px 0}
+      table{width:100%;border-collapse:collapse;margin-top:14px}
+      td{padding:7px 10px;border-bottom:1px solid #f1f5f9}
+      .r{text-align:right}.tot td{background:#1e3a5f;color:#fff;font-weight:700;padding:9px 10px}
+      .sub td{background:#ecfdf5;font-weight:700;color:#15803d;padding:9px 10px}
+      @media print{@page{margin:14mm}}</style>
+      </head><body>
+      <h2>${EMPRESA?.nombre||''}</h2>
+      <h3>Estado de Resultados</h3>
+      <p style="text-align:center;color:#64748b;font-size:11px">${_repFiltroLabel()}</p>
+      <table>
+        ${seccion('INGRESOS',d.ingreso,'#15803d')}
+        <tr class="sub"><td>Total Ingresos</td><td class="r">${fL(t.ingresos)}</td></tr>
+        ${seccion('COSTOS',d.costo,'#d97706')}
+        <tr class="sub"><td>Total Costos</td><td class="r">${fL(t.costos)}</td></tr>
+        <tr style="background:#fef9c3"><td style="padding:8px 10px;font-weight:700">Utilidad Bruta</td>
+          <td class="r" style="padding:8px 10px;font-weight:700">${fL(t.utilidad_bruta)}</td></tr>
+        ${seccion('GASTOS',d.gasto,'#7c3aed')}
+        <tr class="sub"><td>Total Gastos</td><td class="r">${fL(t.gastos)}</td></tr>
+        <tr class="tot"><td style="font-size:13px">UTILIDAD NETA DEL PERÍODO</td>
+          <td class="r" style="font-size:14px">${fL(t.utilidad_neta)}</td></tr>
+      </table>
+      <script>window.print();<\/script></body></html>`);
+  } catch(e){ alert(e.message); }
+}
+
+async function excelRepResultados() {
+  if (!eid()) return;
+  try {
+    const {detalle:d,totales:t} = await GET(`/empresas/${eid()}/estado_resultados`, _repParams());
+    const rows=[['Sección','Código','Cuenta','Monto']];
+    ['ingreso','costo','gasto'].forEach(tipo=>{
+      d[tipo].forEach(f=>rows.push([tipo.toUpperCase(),f.codigo,f.nombre,parseFloat(f.monto)||0]));
+    });
+    rows.push([]);
+    rows.push(['','','Total Ingresos',t.ingresos]);
+    rows.push(['','','Total Costos',t.costos]);
+    rows.push(['','','Utilidad Bruta',t.utilidad_bruta]);
+    rows.push(['','','Total Gastos',t.gastos]);
+    rows.push(['','','UTILIDAD NETA',t.utilidad_neta]);
+    xlsxDownload(rows,'Estado_Resultados');
+  } catch(e){ alert(e.message); }
+}
+
+// ══ 5. BALANCE GENERAL ════════════════════════════════════════════════════════
+async function imprimirRepBalGen() {
+  if (!eid()) return;
+  try {
+    const {detalle:d,totales:t} = await GET(`/empresas/${eid()}/balance_general`, _repParams());
+    const seccion=(titulo,items,color)=> items.length ? `
+      <tr><td colspan="2" style="background:#f0f4ff;font-weight:700;color:#1e3a5f;padding:8px 10px">${titulo}</td></tr>
+      ${items.map(f=>`<tr>
+        <td style="padding-left:${f.codigo?.split('.').length>2?'22px':'10px'};font-size:12px">${f.codigo} — ${f.nombre}</td>
+        <td class="r" style="color:${color}">${fL(f.monto)}</td>
+      </tr>`).join('')}` : '';
+    const cuadra=Math.abs(t.activo-t.pasivo_capital)<0.01;
+    _abrirVentana(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>Balance General</title>
+      <style>*{font-family:Arial,sans-serif;font-size:12px}body{padding:20px;max-width:700px;margin:0 auto}
+      h2,h3{color:#1e3a5f;text-align:center;margin:4px 0}
+      table{width:100%;border-collapse:collapse;margin-top:14px}
+      td{padding:7px 10px;border-bottom:1px solid #f1f5f9}
+      .r{text-align:right}.tot td{background:#1e3a5f;color:#fff;font-weight:700;padding:9px 10px}
+      .sub td{background:#ecfdf5;font-weight:700;color:#15803d;padding:9px 10px}
+      .cuadre{text-align:center;padding:8px;font-weight:700;margin-top:6px;border-radius:4px;font-size:12px}
+      @media print{@page{margin:14mm}}</style>
+      </head><body>
+      <h2>${EMPRESA?.nombre||''}</h2>
+      <h3>Balance General</h3>
+      <p style="text-align:center;color:#64748b;font-size:11px">${_repFiltroLabel()}</p>
+      <table>
+        ${seccion('ACTIVO',d.activo,'#1d4ed8')}
+        <tr class="sub"><td>TOTAL ACTIVO</td><td class="r">${fL(t.activo)}</td></tr>
+        ${seccion('PASIVO',d.pasivo,'#dc2626')}
+        <tr class="sub"><td>Total Pasivo</td><td class="r">${fL(t.pasivo)}</td></tr>
+        ${seccion('CAPITAL',d.capital,'#7c3aed')}
+        <tr class="sub"><td>Total Capital</td><td class="r">${fL(t.capital)}</td></tr>
+        <tr class="tot"><td>TOTAL PASIVO + CAPITAL</td><td class="r">${fL(t.pasivo_capital)}</td></tr>
+      </table>
+      <div class="cuadre" style="background:${cuadra?'#f0fdf4':'#fef2f2'};color:${cuadra?'#15803d':'#dc2626'}">
+        ${cuadra?'✓ Balance cuadra correctamente':'⚠ Diferencia: L. '+Math.abs(t.activo-t.pasivo_capital).toFixed(2)}
+      </div>
+      <script>window.print();<\/script></body></html>`);
+  } catch(e){ alert(e.message); }
+}
+
+async function excelRepBalGen() {
+  if (!eid()) return;
+  try {
+    const {detalle:d,totales:t} = await GET(`/empresas/${eid()}/balance_general`, _repParams());
+    const rows=[['Sección','Código','Cuenta','Monto']];
+    ['activo','pasivo','capital'].forEach(tipo=>{
+      d[tipo].forEach(f=>rows.push([tipo.toUpperCase(),f.codigo,f.nombre,parseFloat(f.monto)||0]));
+      rows.push(['','','Total '+tipo.charAt(0).toUpperCase()+tipo.slice(1),
+        tipo==='activo'?t.activo:tipo==='pasivo'?t.pasivo:t.capital]);
+      rows.push([]);
+    });
+    rows.push(['','','TOTAL PASIVO + CAPITAL',t.pasivo_capital]);
+    xlsxDownload(rows,'Balance_General');
+  } catch(e){ alert(e.message); }
+}
+
+// ══ 6. ESTADO DE GANANCIAS Y PÉRDIDAS (acumulado multi-período) ══════════════
+async function imprimirRepGanPerd() {
+  if (!eid()) return;
+  try {
+    // Usa el mismo endpoint de estado_resultados con filtro de fechas libre
+    const {detalle:d,totales:t} = await GET(`/empresas/${eid()}/estado_resultados`, _repParams());
+    const seccion=(titulo,items,color)=> items.length ? `
+      <tr><td colspan="2" style="background:#f0f4ff;font-weight:700;color:#1e3a5f;padding:8px 10px">${titulo}</td></tr>
+      ${items.map(f=>`<tr>
+        <td style="padding-left:${f.codigo?.split('.').length>2?'22px':'10px'}">${f.codigo} — ${f.nombre}</td>
+        <td class="r" style="color:${color}">${fL(f.monto)}</td>
+      </tr>`).join('')}` : '';
+    _abrirVentana(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>Estado de Ganancias y Pérdidas</title>
+      <style>*{font-family:Arial,sans-serif;font-size:12px}body{padding:20px;max-width:700px;margin:0 auto}
+      h2,h3{color:#1e3a5f;text-align:center;margin:4px 0}
+      table{width:100%;border-collapse:collapse;margin-top:14px}
+      td{padding:7px 10px;border-bottom:1px solid #f1f5f9}
+      .r{text-align:right}
+      .tot td{background:${t.utilidad_neta>=0?'#1e3a5f':'#991b1b'};color:#fff;font-weight:700;padding:11px 10px}
+      .sub td{background:#ecfdf5;font-weight:700;color:#15803d;padding:9px 10px}
+      @media print{@page{margin:14mm}}</style>
+      </head><body>
+      <h2>${EMPRESA?.nombre||''}</h2>
+      <h3>Estado de Ganancias y Pérdidas</h3>
+      <p style="text-align:center;color:#64748b;font-size:11px">${_repFiltroLabel()}</p>
+      <table>
+        ${seccion('INGRESOS',d.ingreso,'#15803d')}
+        <tr class="sub"><td>Total Ingresos</td><td class="r">${fL(t.ingresos)}</td></tr>
+        ${seccion('COSTOS',d.costo,'#d97706')}
+        <tr class="sub"><td>Total Costos</td><td class="r">${fL(t.costos)}</td></tr>
+        <tr style="background:#fef9c3"><td style="padding:8px 10px;font-weight:700">Utilidad Bruta</td>
+          <td class="r" style="padding:8px 10px;font-weight:700">${fL(t.utilidad_bruta)}</td></tr>
+        ${seccion('GASTOS',d.gasto,'#7c3aed')}
+        <tr class="sub"><td>Total Gastos</td><td class="r">${fL(t.gastos)}</td></tr>
+        <tr class="tot">
+          <td style="font-size:14px">${t.utilidad_neta>=0?'🟢 GANANCIA NETA DEL PERÍODO':'🔴 PÉRDIDA NETA DEL PERÍODO'}</td>
+          <td class="r" style="font-size:15px">${fL(Math.abs(t.utilidad_neta))}</td>
+        </tr>
+      </table>
+      <script>window.print();<\/script></body></html>`);
+  } catch(e){ alert(e.message); }
+}
+
+async function excelRepGanPerd() {
+  if (!eid()) return;
+  try {
+    const {detalle:d,totales:t} = await GET(`/empresas/${eid()}/estado_resultados`, _repParams());
+    const rows=[['Sección','Código','Cuenta','Monto']];
+    ['ingreso','costo','gasto'].forEach(tipo=>{
+      d[tipo].forEach(f=>rows.push([tipo.toUpperCase(),f.codigo,f.nombre,parseFloat(f.monto)||0]));
+    });
+    rows.push([]);
+    rows.push(['','','Total Ingresos',t.ingresos]);
+    rows.push(['','','Total Costos',t.costos]);
+    rows.push(['','','Utilidad Bruta',t.utilidad_bruta]);
+    rows.push(['','','Total Gastos',t.gastos]);
+    rows.push(['','',t.utilidad_neta>=0?'GANANCIA NETA':'PÉRDIDA NETA',t.utilidad_neta]);
+    xlsxDownload(rows,'Ganancias_y_Perdidas');
+  } catch(e){ alert(e.message); }
+}
+
+// ══ 7. COMPROBANTES / DIARIO GENERAL ═════════════════════════════════════════
+async function imprimirRepComprobantes() {
+  if (!eid()) return;
+  try {
+    const asientos = await GET(`/empresas/${eid()}/asientos`, _repParams()+((_repParams()?'&':'')+'estado=contabilizado&limit=500'));
+    const bloques = asientos.map(a=>{
+      let tdebe=0, thaber=0;
+      const partidas = (a.partidas||[]).map(p=>{
+        tdebe+=parseFloat(p.debe)||0; thaber+=parseFloat(p.haber)||0;
+        return `<tr>
+          <td style="padding-left:14px;font-family:monospace;font-size:11px">${p.cuenta_codigo||''}</td>
+          <td style="padding-left:14px">${p.cuenta_nombre||''}</td>
+          <td style="padding-left:14px;color:#64748b">${p.descripcion||''}</td>
+          <td class="r" style="color:#1d4ed8">${p.debe>0?fL(p.debe):''}</td>
+          <td class="r" style="color:#dc2626">${p.haber>0?fL(p.haber):''}</td>
+        </tr>`;
+      }).join('');
+      return `<div style="border:1px solid #e2e8f0;border-radius:6px;margin-bottom:14px;overflow:hidden;page-break-inside:avoid">
+        <div style="background:#f8fafc;padding:9px 12px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <div><span style="font-weight:700;color:#1e3a5f">Asiento #${a.numero}</span>
+            &nbsp;—&nbsp;<span style="color:#64748b">${a.fecha}</span>
+            &nbsp;—&nbsp;<span>${a.concepto}</span>
+            ${a.referencia?`&nbsp;|&nbsp;<span style="color:#64748b;font-size:11px">${a.referencia}</span>`:''}
+          </div>
+          <div style="font-size:11px;color:#059669;font-weight:600">${a.tipo}</div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:#f0f4ff">
+            <th style="padding:6px 10px;text-align:left;width:90px">Código</th>
+            <th style="padding:6px 10px;text-align:left">Cuenta</th>
+            <th style="padding:6px 10px;text-align:left">Descripción</th>
+            <th style="padding:6px 10px;text-align:right;width:110px;color:#1d4ed8">Debe</th>
+            <th style="padding:6px 10px;text-align:right;width:110px;color:#dc2626">Haber</th>
+          </tr></thead>
+          <tbody>${partidas}</tbody>
+          <tfoot><tr style="background:#1e3a5f;color:#fff">
+            <td colspan="3" style="padding:7px 10px;font-weight:700;text-align:right">TOTALES</td>
+            <td class="r" style="padding:7px 10px;font-weight:700">${fL(tdebe)}</td>
+            <td class="r" style="padding:7px 10px;font-weight:700">${fL(thaber)}</td>
+          </tr></tfoot>
+        </table>
+      </div>`;
+    }).join('');
+    _abrirVentana(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>Comprobantes — Diario General</title>
+      <style>*{font-family:Arial,sans-serif;font-size:12px}body{padding:20px}
+      h2,h3{color:#1e3a5f;text-align:center;margin:4px 0}
+      .r{text-align:right}
+      @media print{@page{margin:12mm}.page-break{page-break-before:always}}</style>
+      </head><body>
+      <h2>${EMPRESA?.nombre||''}</h2>
+      <h3>Comprobantes — Diario General</h3>
+      <p style="text-align:center;color:#64748b;font-size:11px;margin-bottom:18px">${_repFiltroLabel()}</p>
+      ${bloques||'<p style="text-align:center;color:#94a3b8">Sin comprobantes en el período seleccionado</p>'}
+      <script>window.print();<\/script></body></html>`);
+  } catch(e){ alert(e.message); }
+}
+
+async function excelRepComprobantes() {
+  if (!eid()) return;
+  try {
+    const asientos = await GET(`/empresas/${eid()}/asientos`, _repParams()+((_repParams()?'&':'')+'estado=contabilizado&limit=500'));
+    const rows=[['Asiento','Fecha','Concepto','Referencia','Tipo','Cuenta Código','Cuenta Nombre','Descripción Partida','Debe','Haber']];
+    asientos.forEach(a=>{
+      (a.partidas||[]).forEach(p=>{
+        rows.push([a.numero,a.fecha,a.concepto,a.referencia||'',a.tipo,
+          p.cuenta_codigo||'',p.cuenta_nombre||'',p.descripcion||'',
+          parseFloat(p.debe)||0,parseFloat(p.haber)||0]);
+      });
+      rows.push([]);
+    });
+    xlsxDownload(rows,'Comprobantes_Diario');
+  } catch(e){ alert(e.message); }
 }
